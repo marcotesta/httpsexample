@@ -15,21 +15,22 @@ import javax.net.ssl.TrustManagerFactory;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpsConfigurator;
-import com.sun.net.httpserver.HttpsExchange;
 import com.sun.net.httpserver.HttpsParameters;
 import com.sun.net.httpserver.HttpsServer;
 
 /*
  * http://stackoverflow.com/questions/2308479/simple-java-https-server
  *
- * keytool -genkey -keyalg RSA -alias selfsigned -keystore testkey.jks -storepass password -validity 360 -keysize 2048
- */
+ * keytool -genkey -keyalg RSA -alias selfsigned -keystore server_keystore.jks -storepass password -validity 360 -keysize 2048
+ * keytool -export -alias selfsigned -storepass password -file server.cer -keystore server_keystore.jks
+ * keytool -import -file server.cer -alias firstCA -keystore client_truststore.jks -keypass password -storepass qwerty
+*/
 
 @SuppressWarnings("restriction")
 public class HttpsServerExample {
 
     private static final String KEY_STORE_TYPE = "JKS";
-    private static final String KEY_STORE_NAME = "testkey.jks";
+    private static final String KEY_STORE_NAME = "server_keystore.jks";
     private static final int PORT = 8000;
 
     public static class MyHandler implements HttpHandler {
@@ -37,7 +38,6 @@ public class HttpsServerExample {
         @Override
         public void handle(HttpExchange t) throws IOException {
             String response = "This is the response";
-            HttpsExchange httpsExchange = (HttpsExchange) t;
             t.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
             t.sendResponseHeaders(200, response.length());
             OutputStream os = t.getResponseBody();
@@ -81,18 +81,19 @@ public class HttpsServerExample {
                 @Override
                 public void configure(HttpsParameters params) {
                     try {
-                        // initialise the SSL context
                         SSLContext c = SSLContext.getDefault();
-                        SSLEngine engine = c.createSSLEngine();
-                        params.setNeedClientAuth(false);
-                        params.setCipherSuites(engine.getEnabledCipherSuites());
-                        params.setProtocols(engine.getEnabledProtocols());
 
                         // get the default parameters
-                        SSLParameters defaultSSLParameters = c
-                                .getDefaultSSLParameters();
-                        params.setSSLParameters(defaultSSLParameters);
+                        SSLParameters sslparams = c.getDefaultSSLParameters();
 
+                        // initialise the SSL context
+                        SSLEngine engine = c.createSSLEngine();
+                        sslparams.setNeedClientAuth(true);
+                        sslparams.setCipherSuites(engine
+                                .getEnabledCipherSuites());
+                        sslparams.setProtocols(engine.getEnabledProtocols());
+
+                        params.setSSLParameters(sslparams);
                     } catch (Exception ex) {
                         System.out.println("Failed to create HTTPS port");
                     }
