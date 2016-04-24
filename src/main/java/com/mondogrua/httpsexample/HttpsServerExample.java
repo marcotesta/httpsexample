@@ -1,10 +1,16 @@
 package com.mondogrua.httpsexample;
 
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.security.KeyManagementException;
 import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.CertificateException;
 
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
@@ -21,16 +27,23 @@ import com.sun.net.httpserver.HttpsServer;
 /*
  * http://stackoverflow.com/questions/2308479/simple-java-https-server
  *
- * keytool -genkey -keyalg RSA -alias selfsigned -keystore server_keystore.jks -storepass password -validity 360 -keysize 2048
- * keytool -export -alias selfsigned -storepass password -file server.cer -keystore server_keystore.jks
- * keytool -import -file server.cer -alias firstCA -keystore client_truststore.jks -keypass password -storepass qwerty
+ */
+/* Use the following commands
+keytool -genkey -keyalg RSA -alias server-cert -keystore server_keystore.jks -storepass serv_ks_pwd -keypass serv_key_pwd -validity 360 -keysize 2048 -dname "cn=Marco Testa, o=MondoGrua, c=IT"
+keytool -export -alias server-cert -storepass serv_ks_pwd -file server.cer -keystore server_keystore.jks
+keytool -import -file server.cer -alias server-cert -keystore client_truststore.jks -keypass cli_key_pwd -storepass cli_ts_pwd -noprompt
 */
 
 @SuppressWarnings("restriction")
 public class HttpsServerExample {
 
+    private static final boolean NEED_CLIENT_AUTH = true;
     private static final String KEY_STORE_TYPE = "JKS";
     private static final String KEY_STORE_NAME = "server_keystore.jks";
+    private static final char[] KEY_STORE_PWD = "serv_ks_pwd".toCharArray();
+    private static final char[] KEY_PWD = "serv_key_pwd".toCharArray();
+    private static final String TRUST_STORE_NAME = "server_truststore.jks";
+    private static final char[] TRUST_STORE_PWD = "serv_ts_pwd".toCharArray();
     private static final int PORT = 8000;
 
     public static class MyHandler implements HttpHandler {
@@ -52,53 +65,17 @@ public class HttpsServerExample {
     public static void main(String[] args) throws Exception {
 
         try {
-            // setup the socket address
             InetSocketAddress address = new InetSocketAddress(PORT);
 
-            // initialise the HTTPS server
+            KeyManagerFactory keyMgrFactory = createKeyManagerFactory();
+            TrustManagerFactory trustMgrFactory = createTrustManagerFactory();
+            SSLContext sslContext = createSSLContext(keyMgrFactory,
+                    trustMgrFactory);
+            HttpsConfigurator httpsConfigurator = createHttpsConfigurator(
+                    sslContext);
+
             HttpsServer httpsServer = HttpsServer.create(address, 0);
-            SSLContext sslContext = SSLContext.getInstance("TLS");
-
-            // initialise the keystore
-            char[] password = "password".toCharArray();
-            KeyStore ks = KeyStore.getInstance(KEY_STORE_TYPE);
-            FileInputStream fis = new FileInputStream(KEY_STORE_NAME);
-            ks.load(fis, password);
-
-            // setup the key manager factory
-            KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
-            kmf.init(ks, password);
-
-            // setup the trust manager factory
-            TrustManagerFactory tmf = TrustManagerFactory.getInstance(
-                    "SunX509");
-            tmf.init(ks);
-
-            // setup the HTTPS context and parameters
-            sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
-            httpsServer.setHttpsConfigurator(new HttpsConfigurator(sslContext) {
-
-                @Override
-                public void configure(HttpsParameters params) {
-                    try {
-                        SSLContext c = SSLContext.getDefault();
-
-                        // get the default parameters
-                        SSLParameters sslparams = c.getDefaultSSLParameters();
-
-                        // initialise the SSL context
-                        SSLEngine engine = c.createSSLEngine();
-                        sslparams.setNeedClientAuth(true);
-                        sslparams.setCipherSuites(engine
-                                .getEnabledCipherSuites());
-                        sslparams.setProtocols(engine.getEnabledProtocols());
-
-                        params.setSSLParameters(sslparams);
-                    } catch (Exception ex) {
-                        System.out.println("Failed to create HTTPS port");
-                    }
-                }
-            });
+            httpsServer.setHttpsConfigurator(httpsConfigurator);
             httpsServer.createContext("/test", new MyHandler());
             httpsServer.setExecutor(null); // creates a default executor
             httpsServer.start();
@@ -109,6 +86,61 @@ public class HttpsServerExample {
             exception.printStackTrace();
 
         }
+    }
+
+    private static SSLContext createSSLContext(
+            KeyManagerFactory keyManagerFactory,
+            TrustManagerFactory trustManagerFactory)
+                    throws NoSuchAlgorithmException, KeyManagementException {
+        SSLContext sslContext = SSLContext.getInstance("TLS");
+        sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory
+                .getTrustManagers(), null);
+        return sslContext;
+    }
+
+    private static TrustManagerFactory createTrustManagerFactory()
+            throws KeyStoreException, IOException, NoSuchAlgorithmException,
+            CertificateException, FileNotFoundException {
+        KeyStore trustStore = KeyStore.getInstance(KEY_STORE_TYPE);
+        trustStore.load(new FileInputStream(TRUST_STORE_NAME), TRUST_STORE_PWD);
+        TrustManagerFactory trustManagerFactory = TrustManagerFactory
+                .getInstance("SunX509");
+        trustManagerFactory.init(trustStore);
+        return trustManagerFactory;
+    }
+
+    private static KeyManagerFactory createKeyManagerFactory()
+            throws KeyStoreException, IOException, NoSuchAlgorithmException,
+            CertificateException, FileNotFoundException,
+            UnrecoverableKeyException {
+        KeyStore keyStore = KeyStore.getInstance(KEY_STORE_TYPE);
+        keyStore.load(new FileInputStream(KEY_STORE_NAME), KEY_STORE_PWD);
+        KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(
+                "SunX509");
+        keyManagerFactory.init(keyStore, KEY_PWD);
+        return keyManagerFactory;
+    }
+
+    private static HttpsConfigurator createHttpsConfigurator(
+            SSLContext sslContext) {
+        return new HttpsConfigurator(sslContext) {
+
+            @Override
+            public void configure(HttpsParameters params) {
+                try {
+                    SSLContext context = SSLContext.getDefault();
+                    SSLParameters sslparams = context.getDefaultSSLParameters();
+                    SSLEngine engine = context.createSSLEngine();
+                    sslparams.setCipherSuites(engine.getEnabledCipherSuites());
+                    sslparams.setProtocols(engine.getEnabledProtocols());
+                    sslparams.setNeedClientAuth(NEED_CLIENT_AUTH);
+
+                    params.setSSLParameters(sslparams);
+                } catch (Exception ex) {
+                    System.out.println("Failed to create HTTPS port");
+                }
+            }
+        };
     }
 
 }
