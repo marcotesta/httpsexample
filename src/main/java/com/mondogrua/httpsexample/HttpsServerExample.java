@@ -10,17 +10,21 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
+import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLPeerUnverifiedException;
+import javax.net.ssl.SSLSession;
 import javax.net.ssl.TrustManagerFactory;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpsConfigurator;
+import com.sun.net.httpserver.HttpsExchange;
 import com.sun.net.httpserver.HttpsParameters;
 import com.sun.net.httpserver.HttpsServer;
 
@@ -49,13 +53,31 @@ public class HttpsServerExample {
     public static class MyHandler implements HttpHandler {
 
         @Override
-        public void handle(HttpExchange t) throws IOException {
+        public void handle(HttpExchange exchange) throws IOException {
+            HttpsExchange pippo = ((HttpsExchange) exchange);
+            SSLSession session = pippo.getSSLSession();
+            printClientCertificates(session);
+
             String response = "This is the response";
-            t.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
-            t.sendResponseHeaders(200, response.length());
-            OutputStream os = t.getResponseBody();
+            exchange.getResponseHeaders().add("Access-Control-Allow-Origin",
+                    "*");
+            exchange.sendResponseHeaders(200, response.length());
+            OutputStream os = exchange.getResponseBody();
             os.write(response.getBytes());
             os.close();
+        }
+
+        private void printClientCertificates(SSLSession session) {
+            try {
+                Certificate[] peerCertificates = session.getPeerCertificates();
+
+                for (Certificate certificate : peerCertificates) {
+                    System.out.println("Client Certificate -->" + certificate
+                            .toString());
+                }
+            } catch (SSLPeerUnverifiedException e) {
+                System.out.println("No client certificates");
+            }
         }
     }
 

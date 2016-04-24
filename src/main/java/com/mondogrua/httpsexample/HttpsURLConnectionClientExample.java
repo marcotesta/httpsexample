@@ -1,5 +1,8 @@
 package com.mondogrua.httpsexample;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URL;
 
 import javax.net.ssl.HostnameVerifier;
@@ -49,7 +52,19 @@ public class HttpsURLConnectionClientExample {
             HttpsURLConnection client = (HttpsURLConnection) url
                     .openConnection();
 
-            System.out.println("RETURN : " + client.getResponseCode());
+            System.out.println("Response Code : " + client.getResponseCode());
+
+            InputStream inputstream = client.getInputStream();
+            InputStreamReader inputstreamreader = new InputStreamReader(
+                    inputstream);
+            BufferedReader bufferedreader = new BufferedReader(
+                    inputstreamreader);
+
+            String string = null;
+            while ((string = bufferedreader.readLine()) != null) {
+                System.out.println("Response content : " + string);
+            }
+
         } catch (Exception ex) {
             ex.printStackTrace();
         }
